@@ -18,7 +18,7 @@ test(t => eval(transform(`
   t.is(h.sayHello('batman'), 'Hello, I am batman')
 `)))
 
-test.only(t => eval(transform(`
+test(t => eval(transform(`
   class Hero {
     constructor(name) {
       this.name = name
