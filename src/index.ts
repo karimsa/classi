@@ -20,6 +20,7 @@ import {
   stringLiteral,
   ClassMethod,
   Statement,
+  cloneDeep,
 } from '@babel/types'
 
 const getInstanceMethodName = (className: string, method: string) => `_${className}__${method}`
@@ -212,8 +213,6 @@ export default function classi(): { visitor: Visitor } {
                   const bindingInfo = bindingToClass.get(binding)
 
                   if (bindingInfo) {
-                    console.log(`found binding for "${binding.identifier.name}" in:`, binding.path.node)
-
                     const { methods } = bindingInfo
                     const methodTransl = methods.get(propertyName)
 
@@ -301,8 +300,8 @@ export default function classi(): { visitor: Visitor } {
                     CONSTRUCTOR,
                     INIT_NAME: declareMethod('instance', 'init'),
                     THIS,
-                    INIT_ARGS: method.params,
-                    INIT_BODY: method.body.body,
+                    INIT_ARGS: method.params.map(n => cloneDeep(n)),
+                    INIT_BODY: method.body.body.map(n => cloneDeep(n)),
                   })) as NodePath<any>[]
 
                   const initPath = constructorPaths[0]
@@ -324,9 +323,7 @@ export default function classi(): { visitor: Visitor } {
                     throw new Error(`Failed to grab the path of the method body for: ${method.key.name}`)
                   }
 
-                  // const THIS = replaceThisBinding(bodyPath)
                   const THIS = methodPath.scope.generateUidIdentifier('__$this')
-                  console.log(THIS)
 
                   const METHOD = declareMethod('instance', method.key.name)
                   ctx.methods.set(method.key.name, METHOD)
@@ -334,8 +331,8 @@ export default function classi(): { visitor: Visitor } {
                   const fnPath = path.insertAfter(fnDeclaration({
                     METHOD,
                     THIS,
-                    ARGS: method.params,
-                    BODY: method.body.body,
+                    ARGS: method.params.map(n => cloneDeep(n)),
+                    BODY: method.body.body.map(n => cloneDeep(n)),
                   }))[0] as NodePath<any>
                   if (!fnPath) {
                     throw new Error(`Failed to insert function declaration`)
