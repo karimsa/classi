@@ -112,10 +112,6 @@ interface Context {
   methods: Map<string, Identifier>
 }
 
-declare const console: {
-  log: (... args: any[]) => void
-}
-
 function replaceThisBinding(path: NodePath<any>, THIS: Identifier): Identifier {
   path.traverse({
     ThisExpression(thisPath) {
