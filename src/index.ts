@@ -256,6 +256,11 @@ export default function classi(): { visitor: Visitor } {
           if (!path.node.id || !isIdentifier(path.node.id)) {
             return
           }
+
+          // deopt if there is a superclass
+          if (path.node.superClass !== null) {
+            return
+          }
           
           function declareMethod(type: 'static' | 'instance', name: string) {
             if (!path.node.id) {

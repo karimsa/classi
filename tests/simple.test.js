@@ -32,3 +32,8 @@ test(t => eval(transform(`
   const h = new Hero('batman')
   t.is(h.sayHello('batman'), 'Hello, I am batman')
 `)))
+
+test(t => {
+  const src = 'class Hero extends Object {}'
+  t.is(transform(src), src, 'Should deopt but not error when inheritance is used')
+})

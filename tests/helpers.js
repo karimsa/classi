@@ -6,10 +6,8 @@
 const babel = require('@babel/core')
 
 exports.transform = function transform(code) {
-  const newCode = babel.transform(code, {
+  return babel.transform(code, {
     babelrc: false,
     plugins: [require('../')],
   }).code
-  console.log(newCode)
-  return newCode
 }
