@@ -47,7 +47,7 @@ const propertyGet = tpl(`
   PROPERTY: Expression
 }>
 
-const propertySet = template(`
+const propertySet = tpl(`
   INSTANCE.set(PROPERTY, VALUE)
 `) as Template<{
   INSTANCE: Identifier
@@ -68,10 +68,10 @@ function INIT_NAME(THIS, INIT_ARGS) {
   INIT_BODY
 }
 
-function CONSTRUCTOR(...args) {
+function CONSTRUCTOR(INIT_ARGS) {
   const map = new Map()
-  INIT_NAME.call(map, args)
-  return new Map()
+  INIT_NAME(map, INIT_ARGS)
+  return map
 }
 `) as Template<{
   INIT_NAME: Identifier
@@ -227,12 +227,16 @@ export default function classi(): { visitor: Visitor } {
                         throw new Error(`Unexpected parent of method memeber: ${path.parent.type}`)
                       }
                     } else if (path.parent.type === 'AssignmentExpression' && path.parent.left === path.node) {
-                      // path.parentPath.replaceWithMultiple(propertySet({
-                      //   INSTANCE: identifier(objectName),
-                      //   PROPERTY: stringLiteral(propertyName),
-                      //   VALUE: path.parent.right,
-                      // }))
-                      path.parentPath.skip()
+                      const nodes = propertySet({
+                        INSTANCE: identifier(objectName),
+                        PROPERTY: stringLiteral(propertyName),
+                        VALUE: path.parent.right,
+                      })
+
+                      const setPath = path.parentPath.insertBefore(nodes)[0] as NodePath<any>
+                      setPath.skip()
+
+                      path.parentPath.remove()
                     } else {
                       path.replaceWithMultiple(propertyGet({
                         INSTANCE: identifier(objectName),
