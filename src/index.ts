@@ -134,6 +134,14 @@ function replaceThisBinding(path: NodePath<any>, THIS: Identifier): Identifier {
   return THIS
 }
 
+function replaceSuperBinding(path: NodePath<any>) {
+  path.traverse({
+    Super(superPath) {
+      superPath.replaceWith(identifier('Object'))
+    },
+  })
+}
+
 export default function classi(): { visitor: Visitor } {
   const contexts = new Map<Binding, Context>()
   const bindingToClass = new Map<Binding, Context>()
@@ -186,8 +194,14 @@ export default function classi(): { visitor: Visitor } {
                   break
                 }
 
+                case 'ExpressionStatement':
+                  path.remove()
+                  break
+
                 default:
-                  throw new Error(`Unknown parent type: ${path.parentPath.parent.type}`)
+                  // console.log(path.parentPath.parent)
+                  // throw new Error(`Unknown parent type: ${path.parentPath.parent.type}`)
+                  break
               }
             }
           }
@@ -243,9 +257,6 @@ export default function classi(): { visitor: Visitor } {
                   }
                 }
               } break
-
-              default:
-                throw new Error(`Cannot handle member expression property of type: ${property.type}`)
             }
           }
         },
@@ -315,6 +326,7 @@ export default function classi(): { visitor: Visitor } {
                   }
 
                   replaceThisBinding(initPath, THIS)
+                  replaceSuperBinding(initPath)
 
                   const thisBinding = initPath.scope.getBinding(THIS.name)
                   if (!thisBinding) {
@@ -322,6 +334,8 @@ export default function classi(): { visitor: Visitor } {
                   }
 
                   markTainted(thisBinding, ctx)
+                } else if (method.static) {
+                  // TODO: support static methods
                 } else {
                   const bodyPath = methodPath.get('body')
                   if (!bodyPath) {
@@ -344,6 +358,7 @@ export default function classi(): { visitor: Visitor } {
                   }
 
                   replaceThisBinding(fnPath, THIS)
+                  replaceSuperBinding(fnPath)
 
                   const thisBinding = fnPath.scope.getBinding(THIS.name)
                   if (!thisBinding) {
