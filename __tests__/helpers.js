@@ -5,9 +5,12 @@
 
 const babel = require('@babel/core')
 
-exports.transform = function transform(code) {
-  return babel.transform(code, {
+exports.transform = function transform(code, transform = false, minify = false) {
+  const output = babel.transform(code, {
     babelrc: false,
-    plugins: [require('../')],
+    presets: minify ? ['minify'] : [],
+    plugins: transform ? [require('../')] : [],
   }).code
+  // console.log(output)
+  return output
 }

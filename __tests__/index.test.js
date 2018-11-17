@@ -9,50 +9,48 @@ const glob = require('glob')
 
 const { transform } = require('./helpers')
 
-const fixturesPath = `${__dirname}/fixtures`
+const isBenchmark = process.env.NODE_ENV === 'benchmark'
+const fixturesPath = isBenchmark ? `${__dirname}/benchmarks` : `${__dirname}/fixtures`
+
+function createTest(name, method) {
+  if (isBenchmark) {
+    suite(name, () => {
+      bench(`${name} (input)`, method(false))
+      bench(`${name} (output)`, method(true))
+    })
+  } else {
+    test(`${name} (input)`, method(false))
+    test(`${name} (output)`, method(true))
+  }
+}
 
 for (const file of glob.sync(`${fixturesPath}/**/*.js`)) {
-  if (!file.includes('/nested-class-super-call-in-key/')) {
-    continue
-  }
-
-  test(
+  createTest(
     file.substr(fixturesPath.length + 1, file.length - 3),
-    _done => {
-      let src
-      function done(err) {
-        if (err && src) {
-          console.log(src)
+    shouldTransform => {
+      const data = fs.readFileSync(file, 'utf8')
+      const expect = global.expect || function() {
+        return {
+          toBe() {},
         }
-
-        _done(err)
       }
-
-      fs.readFile(file, 'utf8', (err, data) => {
-        if (err) done(err)
-        else {
-          try {
-            const sandbox = vm.createContext({
-              babelHelpers: {},
-              expect,
-            })
-
-            src = `
-            (function(){
-              ${transform(data)}
-            }())
-            `
-
-            vm.runInContext(src, sandbox, {
-              filename: file,
-            })
-
-            done(null)
-          } catch (err) {
-            done(err)
-          }
-        }
+      const sandbox = vm.createContext({
+        babelHelpers: {},
+        expect,
+        exports: () => { throw new Error('Did not export anything') },
       })
+
+      const src = transform(`
+      exports = function(){
+        ${data}
+      }
+      `, shouldTransform, isBenchmark)
+
+      vm.runInContext(src, sandbox, {
+        filename: file,
+      })
+
+      return sandbox.exports
     }
   )
 }
