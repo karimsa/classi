@@ -107,6 +107,29 @@ const methodCall = tpl(`
   ARGS: Expression[]
 }>
 
+const methodBind = tpl(`
+  METHOD.bind(THIS)
+`) as Template<{
+  METHOD: Identifier
+  THIS: Identifier
+}>
+
+const memberComputedExpansion = tpl(`
+  (INSTANCE=EXPR,INSTANCE[PROPERTY])
+`) as Template<{
+  INSTANCE: Identifier
+  EXPR: Expression
+  PROPERTY: Expression
+}>
+
+const memberNonComputedExpansion = tpl(`
+  (INSTANCE=EXPR,INSTANCE.PROPERTY)
+`) as Template<{
+  INSTANCE: Identifier
+  EXPR: Expression
+  PROPERTY: Expression
+}>
+
 interface Context {
   constructorName: Identifier
   methods: Map<string, Identifier>
@@ -198,8 +221,27 @@ export default function classi(): { visitor: Visitor } {
                   path.remove()
                   break
 
+                case 'MemberExpression': {
+                  const memberExpansion = (
+                    path.parentPath.parent.computed ?
+                    memberComputedExpansion :
+                    memberNonComputedExpansion
+                  )
+                  const INSTANCE = path.scope.generateDeclaredUidIdentifier('__$instance')
+                  path.parentPath.parentPath.replaceWithMultiple(memberExpansion({
+                    INSTANCE,
+                    EXPR: path.parentPath.parent.object,
+                    PROPERTY: path.parentPath.parent.property,
+                  }))
+
+                  const instanceBinding = path.parentPath.parentPath.scope.getBinding(INSTANCE.name)
+                  if (!instanceBinding) {
+                    throw new Error(`Failed to find instance binding after inserting it`)
+                  }
+                  markTainted(instanceBinding, ctx)
+                } break
+
                 default:
-                  // console.log(path.parentPath.parent)
                   // throw new Error(`Unknown parent type: ${path.parentPath.parent.type}`)
                   break
               }
@@ -234,7 +276,10 @@ export default function classi(): { visitor: Visitor } {
                           ARGS: path.parent.arguments as Expression[],
                         }))
                       } else {
-                        throw new Error(`Unexpected parent of method memeber: ${path.parent.type}`)
+                        path.parentPath.replaceWithMultiple(methodBind({
+                          METHOD: methodTransl,
+                          THIS: path.node.object,
+                        }))
                       }
                     } else if (path.parent.type === 'AssignmentExpression' && path.parent.left === path.node) {
                       const nodes = propertySet({
