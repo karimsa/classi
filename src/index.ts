@@ -317,7 +317,12 @@ export default function classi(): { visitor: Visitor } {
           if (path.node.superClass !== null) {
             return
           }
-          
+
+          // disallow in nested scopes
+          if (path.parent.type !== 'Program') {
+            return
+          }
+
           function declareMethod(type: 'static' | 'instance', name: string) {
             if (!path.node.id) {
               throw new Error(`Impossible path reached`)
