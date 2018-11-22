@@ -25,6 +25,10 @@ function createTest(name, method) {
 }
 
 for (const file of glob.sync(`${fixturesPath}/**/*.js`)) {
+  if (process.env.FILTER && !file.includes(`/${process.env.FILTER}/`)) {
+    continue
+  }
+
   createTest(
     file.substr(fixturesPath.length + 1, file.length - 3),
     shouldTransform => {
