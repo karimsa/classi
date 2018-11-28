@@ -44,16 +44,14 @@ for (const file of glob.sync(`${fixturesPath}/**/*.js`)) {
         exports: () => { throw new Error('Did not export anything') },
       })
 
-      const src = transform(`
-      exports = function(){
-        ${data}
-      }
-      `, shouldTransform, isBenchmark)
+      const output = transform(data, shouldTransform, isBenchmark)
+      const src = `exports = function(){${output}}`
 
       vm.runInContext(src, sandbox, {
         filename: file,
       })
 
+      console.log(src)
       return sandbox.exports
     }
   )

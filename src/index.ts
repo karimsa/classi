@@ -21,6 +21,7 @@ import {
   ClassMethod,
   Statement,
   cloneDeep,
+  isMemberExpression,
 } from '@babel/types'
 
 const getInstanceMethodName = (className: string, method: string) => `_${className}__${method}`
@@ -37,6 +38,29 @@ function tpl<T>(src: string) {
     }
 
     return [compiled]
+  }
+}
+
+const DEBUG = true
+function debug(msg: string): void {
+  if (DEBUG) {
+    console.log('[classi] %s', msg)
+  }
+}
+
+function get(object: any, propertyPath: string): any {
+  if (!propertyPath) {
+    return object
+  }
+
+  if (object) {
+    const nextDot = propertyPath.indexOf('.')
+    if (nextDot === -1) {
+      return
+    }
+
+    const nextProperty = propertyPath.substr(0, nextDot)
+    return get(object[nextProperty], propertyPath)
   }
 }
 
@@ -165,9 +189,22 @@ function replaceSuperBinding(path: NodePath<any>) {
   })
 }
 
+function getHighestIdentifier(node: MemberExpression): Identifier {
+  if (isIdentifier(node.object)) {
+    return node.object
+  }
+
+  if (isMemberExpression(node.object)) {
+    return getHighestIdentifier(node.object)
+  }
+
+  throw new Error(`Unknown node type reached: ${node.object.type}`)
+}
+
 export default function classi(): { visitor: Visitor } {
   const contexts = new Map<Binding, Context>()
   const bindingToClass = new Map<Binding, Context>()
+  const bindingPathToClass = new Map<Binding, Map<string, Context>>()
 
   function createContext(binding: Binding, ctx: Context) {
     contexts.set(binding, ctx)
@@ -179,6 +216,14 @@ export default function classi(): { visitor: Visitor } {
 
   function markTainted(binding: Binding, ctx: Context) {
     bindingToClass.set(binding, ctx)
+  }
+
+  function markPathTainted(binding: Binding, property: Identifier, ctx: Context) {
+    // TODO: handle computed identifiers
+
+    const propertyMap = bindingPathToClass.get(binding) || new Map()
+    bindingPathToClass.set(binding, propertyMap)
+    propertyMap.set(property.name, ctx)
   }
 
   return {
@@ -195,24 +240,50 @@ export default function classi(): { visitor: Visitor } {
                 ARGS: path.parent.arguments as Expression[],
               }))
 
-              switch (path.parentPath.parent.type) {
+              switch (get(path, 'parentPath.parent.type')) {
                 case 'AssignmentExpression': // f = new Hero()
                 case 'VariableDeclarator': { // let f = new Hero()
                   const parent = path.parentPath.parent
-                  const lval = parent.type === 'AssignmentExpression' ? parent.left : parent.id
+                  const lval = parent.type === 'AssignmentExpression' ? parent.left : get(parent, 'id')
                   if (!lval) {
                     throw new Error(`Unexpected LVal of type null`)
                   }
 
-                  if (isIdentifier(lval)) {
-                    const refBinding = path.parentPath.parentPath.scope.getBinding(lval.name)
-                    if (!refBinding) {
-                      throw new Error(`Failed to find a binding for: ${lval.name} in ${parent.type}`)
-                    }
+                  switch (lval.type) {
+                    case 'Identifier': {
+                      const refBinding = path.parentPath.parentPath.scope.getBinding(lval.name)
+                      if (!refBinding) {
+                        throw new Error(`Failed to find a binding for: ${lval.name} in ${parent.type}`)
+                      }
 
-                    markTainted(refBinding, ctx)
-                  } else {
-                    throw new Error(`Cannot handle an LVal of type: ${lval.type}`)
+                      markTainted(refBinding, ctx)
+                    } break
+
+                    case 'MemberExpression': {
+                      switch (lval.object.type) {
+                        // a.b = new Object()
+                        case 'Identifier': {
+                          const idBinding = path.scope.getBinding(lval.object.name)
+                          if (!idBinding) {
+                            throw new Error(
+                              `Failed to locate binding for "${lval.object.name}" ` +
+                              `in "${path.node.type}" (object of member expression)`
+                            )
+                          }
+
+                          markPathTainted(idBinding, lval.property, ctx)
+                        } break
+
+                        // this.prop = new Object()
+                        case 'ThisExpression': {
+                          // ...
+                        } break
+
+                        default: throw new Error(`Unknown object type in member expression: ${lval.object.type}`)
+                      }
+                    } break
+
+                    default: throw new Error(`Cannot handle an LVal of type: ${lval.type}`)
                   }
                   break
                 }
@@ -223,15 +294,15 @@ export default function classi(): { visitor: Visitor } {
 
                 case 'MemberExpression': {
                   const memberExpansion = (
-                    path.parentPath.parent.computed ?
+                    get(path, 'parentPath.parent.computed') ?
                     memberComputedExpansion :
                     memberNonComputedExpansion
                   )
                   const INSTANCE = path.scope.generateDeclaredUidIdentifier('__$instance')
                   path.parentPath.parentPath.replaceWithMultiple(memberExpansion({
                     INSTANCE,
-                    EXPR: path.parentPath.parent.object,
-                    PROPERTY: path.parentPath.parent.property,
+                    EXPR: get(path, 'parentPath.parent.object'),
+                    PROPERTY: get(path, 'parentPath.parent.property'),
                   }))
 
                   const instanceBinding = path.parentPath.parentPath.scope.getBinding(INSTANCE.name)
@@ -252,7 +323,11 @@ export default function classi(): { visitor: Visitor } {
 
       MemberExpression: {
         exit(path: NodePath<MemberExpression>) {
-          if (isIdentifier(path.node.object)) {
+          if (isMemberExpression(path.node.object)) {
+            const leftmostId = getHighestIdentifier(path.node.object)
+
+            console.log({ leftmostId })
+          } else if (isIdentifier(path.node.object)) {
             const objectName = path.node.object.name
             const property = path.node.property as Expression
 
@@ -310,16 +385,13 @@ export default function classi(): { visitor: Visitor } {
       ClassDeclaration: {
         enter(path: NodePath<ClassDeclaration>): void {
           if (!path.node.id || !isIdentifier(path.node.id)) {
-            return
-          }
-
-          // deopt if there is a superclass
-          if (path.node.superClass !== null) {
+            debug(`deoptimizing because class is nameless`)
             return
           }
 
           // disallow in nested scopes
           if (path.parent.type !== 'Program') {
+            debug(`deoptimizing because parent is not program (it is: ${path.parent.type})`)
             return
           }
 
